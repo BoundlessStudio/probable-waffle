@@ -1,0 +1,19 @@
+{
+  "name": "realtime-map-voice-chat",
+  "version": "1.0.0",
+  "description": "Realtime map-aware voice chat demo using OpenAI's Realtime API and Google Maps",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "supertest": "^6.3.4"
+  }
+}
