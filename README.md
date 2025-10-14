@@ -1,74 +1,48 @@
-# Realtime Map-Aware Voice Chat Demo
+# OpenAI Realtime Console
 
-A proof-of-concept web application that combines Google Maps with OpenAI's Realtime API so you can talk with an AI assistant while the current map view is continuously added to the conversation as background visual context.
+This is an example application showing how to use the [OpenAI Realtime API](https://platform.openai.com/docs/guides/realtime) with [WebRTC](https://platform.openai.com/docs/guides/realtime-webrtc).
 
-## Features
+## Installation and usage
 
-- ⚡️ WebRTC connection to OpenAI's realtime model for live, bi-directional audio.
-- 🗺️ Embedded Google Map that tracks pans, zooms, and drags.
-- 🖼️ Automatic map snapshots that are uploaded to the conversation as `input_image` messages.
-- 💬 Lightweight chat interface with text input, push-to-talk microphone toggle, and optional browser speech recognition.
-- 🔁 Manual `response.create` trigger so the assistant only speaks when you ask.
-
-## Prerequisites
-
-- Node.js 18+
-- Google Maps JavaScript API key
-- OpenAI API key with access to realtime models
-
-Create a `.env` file in the project root:
-
-```env
-OPENAI_API_KEY=sk-...
-# Optional overrides
-# OPENAI_REALTIME_MODEL=gpt-realtime-preview
-# OPENAI_VOICE=verse
-# PORT=3000
-```
-
-Copy `public/config.example.js` to `public/config.js` and add your Google Maps API key:
+Before you begin, you'll need an OpenAI API key - [create one in the dashboard here](https://platform.openai.com/settings/api-keys). Create a `.env` file from the example file and set your API key in there:
 
 ```bash
-cp public/config.example.js public/config.js
+cp .env.example .env
 ```
 
-Edit `public/config.js`:
-
-```js
-window.GOOGLE_MAPS_API_KEY = "YOUR_GOOGLE_MAPS_API_KEY";
-```
-
-## Install & Run
+Running this application locally requires [Node.js](https://nodejs.org/) to be installed. Install dependencies for the application with:
 
 ```bash
 npm install
+```
+
+Start the application server with:
+
+```bash
 npm run dev
 ```
 
-The server serves the static frontend and exposes `/session`, a proxy endpoint that obtains an ephemeral realtime session token from OpenAI. Visit [http://localhost:3000](http://localhost:3000) after starting the server.
+This should start the console application on [http://localhost:3000](http://localhost:3000).
 
-## Tests
+This application is a minimal template that uses [express](https://expressjs.com/) to serve the React frontend contained in the [`/client`](./client) folder. The server is configured to use [vite](https://vitejs.dev/) to build the React frontend.
 
-Run the lightweight API route tests with the Node.js test runner:
+### Enabling Google Maps context streaming
 
-```bash
-npm test
-```
+This demo continuously captures the active Google Maps view and sends the latest snapshot to the OpenAI assistant as visual context while a realtime session is active. To enable this feature you must provide a Google Maps Platform API key with access to the Maps JavaScript, Geocoding, and Static Maps APIs.
 
-## Usage
+1. Enable the required APIs for your project in the [Google Cloud console](https://console.cloud.google.com/apis/library).
+2. Create a browser key and add it to your `.env` file using the `VITE_GOOGLE_MAPS_API_KEY` variable (see `.env.example`).
+3. Restart `npm run dev` after updating the environment variable so that Vite can expose the key to the client bundle.
 
-1. Allow the site to access your location so the map can center on you (optional).
-2. Click **🎙️ Start Mic** to stream audio to the assistant (speech recognition will transcribe optional text snippets).
-3. Pan or zoom the map; the app captures a snapshot and injects it into the conversation background context.
-4. Type or speak a message, then press **Ask Assistant** (or submit the form) to send `response.create`, prompting the AI to answer using the latest context.
+Once configured, the map panel will display a live preview of the current map, show the status of the streaming pipeline, and allow you to trigger manual snapshots, jump to your current location, or pause/resume the automatic uploads.
 
-Check the browser console for detailed logs when map snapshots are captured and streamed.
+This application shows how to send and receive Realtime API events over the WebRTC data channel and configure client-side function calling. You can also view the JSON payloads for client and server events using the logging panel in the UI.
 
-## Notes
+For a more comprehensive example, see the [OpenAI Realtime Agents](https://github.com/openai/openai-realtime-agents) demo built with Next.js, using an agentic architecture inspired by [OpenAI Swarm](https://github.com/openai/swarm).
 
-- The project uses [`html2canvas`](https://html2canvas.hertzen.com/) to rasterize the map's DOM content into a base64 PNG.
-- Speech recognition relies on the experimental Web Speech API and may not be available in all browsers. The realtime audio stream still works without it.
-- The assistant preview appears live as partial text deltas arrive; final responses are committed when the API emits `response.completed`.
+## Previous WebSockets version
+
+The previous version of this application that used WebSockets on the client (not recommended in browsers) [can be found here](https://github.com/openai/openai-realtime-console/tree/websockets).
 
 ## License
 
