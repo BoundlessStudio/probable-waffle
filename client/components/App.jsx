@@ -5,10 +5,13 @@ import SessionControls from "./SessionControls";
 import ToolPanel from "./ToolPanel";
 import MapPanel from "./MapPanel";
 
+const MAX_SNAPSHOTS = 12;
+
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [events, setEvents] = useState([]);
   const [dataChannel, setDataChannel] = useState(null);
+  const [snapshots, setSnapshots] = useState([]);
   const peerConnection = useRef(null);
   const audioElement = useRef(null);
 
@@ -24,17 +27,19 @@ export default function App() {
     // Set up to play remote audio from the model
     audioElement.current = document.createElement("audio");
     audioElement.current.autoplay = true;
-    pc.ontrack = (e) => (audioElement.current.srcObject = e.streams[0]);
+    pc.ontrack = (event) => {
+      audioElement.current.srcObject = event.streams[0];
+    };
 
     // Add local audio track for microphone input in the browser
-    const ms = await navigator.mediaDevices.getUserMedia({
+    const mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
     });
-    pc.addTrack(ms.getTracks()[0]);
+    pc.addTrack(mediaStream.getTracks()[0]);
 
     // Set up data channel for sending and receiving events
-    const dc = pc.createDataChannel("oai-events");
-    setDataChannel(dc);
+    const dataChannelInstance = pc.createDataChannel("oai-events");
+    setDataChannel(dataChannelInstance);
 
     // Start the session using the Session Description Protocol (SDP)
     const offer = await pc.createOffer();
@@ -58,20 +63,19 @@ export default function App() {
     peerConnection.current = pc;
   }
 
-  // Stop current session, clean up peer connection and data channel
   function stopSession() {
     if (dataChannel) {
       dataChannel.close();
     }
 
-    peerConnection.current.getSenders().forEach((sender) => {
-      if (sender.track) {
-        sender.track.stop();
-      }
-    });
-
-    if (peerConnection.current) {
-      peerConnection.current.close();
+    const connection = peerConnection.current;
+    if (connection) {
+      connection.getSenders().forEach((sender) => {
+        if (sender.track) {
+          sender.track.stop();
+        }
+      });
+      connection.close();
     }
 
     setIsSessionActive(false);
@@ -79,29 +83,38 @@ export default function App() {
     peerConnection.current = null;
   }
 
-  // Send a message to the model
-  function sendClientEvent(message) {
-    if (dataChannel) {
+  const sendClientEvent = useCallback(
+    (message) => {
+      if (!dataChannel) {
+        console.error(
+          "Failed to send message - no data channel available",
+          message,
+        );
+        return;
+      }
+
+      if (dataChannel.readyState !== "open") {
+        console.warn(
+          `Dropped client event because data channel is ${dataChannel.readyState}`,
+          message,
+        );
+        return;
+      }
+
       const timestamp = new Date().toLocaleTimeString();
       message.event_id = message.event_id || crypto.randomUUID();
 
-      // send event before setting timestamp since the backend peer doesn't expect this field
+      // Send event before setting timestamp since the backend peer doesn't expect this field
       dataChannel.send(JSON.stringify(message));
 
-      // if guard just in case the timestamp exists by miracle
       if (!message.timestamp) {
         message.timestamp = timestamp;
       }
-      setEvents((prev) => [message, ...prev]);
-    } else {
-      console.error(
-        "Failed to send message - no data channel available",
-        message,
-      );
-    }
-  }
+      setEvents((previous) => [message, ...previous]);
+    },
+    [dataChannel],
+  );
 
-  // Send a text message to the model
   function sendTextMessage(message) {
     const event = {
       type: "conversation.item.create",
@@ -123,8 +136,18 @@ export default function App() {
 
   const handleMapSnapshot = useCallback(
     (snapshot) => {
-      if (!isSessionActive) return;
-      if (!dataChannel || dataChannel.readyState !== "open") return;
+      setSnapshots((previous) => {
+        const next = [snapshot, ...previous];
+        return next.slice(0, MAX_SNAPSHOTS);
+      });
+
+      if (!isSessionActive) {
+        return;
+      }
+
+      if (!dataChannel || dataChannel.readyState !== "open") {
+        return;
+      }
 
       const { center, zoom, capturedAt, imageBase64, mediaType } = snapshot;
       const timestamp = new Date(capturedAt);
@@ -158,28 +181,35 @@ export default function App() {
 
       sendClientEvent(event);
     },
-    [dataChannel, isSessionActive],
+    [dataChannel, isSessionActive, sendClientEvent],
   );
 
-  // Attach event listeners to the data channel when a new one is created
   useEffect(() => {
-    if (dataChannel) {
-      // Append new server events to the list
-      dataChannel.addEventListener("message", (e) => {
-        const event = JSON.parse(e.data);
-        if (!event.timestamp) {
-          event.timestamp = new Date().toLocaleTimeString();
-        }
-
-        setEvents((prev) => [event, ...prev]);
-      });
-
-      // Set session active when the data channel is opened
-      dataChannel.addEventListener("open", () => {
-        setIsSessionActive(true);
-        setEvents([]);
-      });
+    if (!dataChannel) {
+      return undefined;
     }
+
+    const handleMessage = (event) => {
+      const parsedEvent = JSON.parse(event.data);
+      if (!parsedEvent.timestamp) {
+        parsedEvent.timestamp = new Date().toLocaleTimeString();
+      }
+
+      setEvents((previous) => [parsedEvent, ...previous]);
+    };
+
+    const handleOpen = () => {
+      setIsSessionActive(true);
+      setEvents([]);
+    };
+
+    dataChannel.addEventListener("message", handleMessage);
+    dataChannel.addEventListener("open", handleOpen);
+
+    return () => {
+      dataChannel.removeEventListener("message", handleMessage);
+      dataChannel.removeEventListener("open", handleOpen);
+    };
   }, [dataChannel]);
 
   return (
@@ -215,14 +245,10 @@ export default function App() {
           </section>
         </section>
         <section className="absolute top-0 w-[380px] right-0 bottom-0 p-4 pt-0 overflow-y-auto">
-          <ToolPanel
-            sendClientEvent={sendClientEvent}
-            sendTextMessage={sendTextMessage}
-            events={events}
-            isSessionActive={isSessionActive}
-          />
+          <ToolPanel snapshots={snapshots} isSessionActive={isSessionActive} />
         </section>
       </main>
     </>
   );
 }
+

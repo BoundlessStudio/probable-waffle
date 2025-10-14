@@ -6,14 +6,14 @@ import Button from "./Button";
 const DEFAULT_CENTER = { lat: 40.758, lng: -73.9855 }; // Times Square
 const DEFAULT_ZOOM = 13;
 const CAPTURE_INTERVAL_MS = 15000;
-const STATIC_IMAGE_SIZE = { width: 640, height: 640 };
+const STATIC_IMAGE_SIZE = { width: 480, height: 640 };
 
 const STATUS_LABELS = {
   idle: "idle",
   loading: "loading map...",
   ready: "map ready",
-  streaming: "streaming to assistant",
-  paused: "map stream paused",
+  capturing: "capturing snapshots",
+  paused: "snapshot timer paused",
   error: "error",
 };
 
@@ -22,8 +22,8 @@ function formatLatLng({ lat, lng }) {
 }
 
 function getStatusMessage(status, lastSnapshot) {
-  if (status === "streaming" && lastSnapshot) {
-    return `streaming (last snapshot ${lastSnapshot.relativeTime})`;
+  if (status === "capturing" && lastSnapshot) {
+    return `capturing snapshots (last snapshot ${lastSnapshot.relativeTime})`;
   }
 
   if (status === "paused" && lastSnapshot) {
@@ -50,7 +50,7 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
   const loaderInitializedRef = useRef(false);
 
   const [status, setStatus] = useState("idle");
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [isSnapshotTimerActive, setIsSnapshotTimerActive] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -59,14 +59,16 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
 
   const apiKey = useMemo(() => import.meta.env.VITE_GOOGLE_MAPS_API_KEY, []);
 
-  const stopStreaming = useCallback((options = {}) => {
+  const stopSnapshotTimer = useCallback((options = {}) => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    setIsStreaming(false);
+    setIsSnapshotTimerActive(false);
     if (!options.preserveStatus) {
-      setStatus((previous) => (previous === "streaming" ? "paused" : previous));
+      setStatus((previous) =>
+        previous === "capturing" ? "paused" : previous,
+      );
     }
   }, []);
 
@@ -116,19 +118,19 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
       };
       setLastSnapshot(snapshot);
       setErrorMessage("");
-      setStatus("streaming");
+      setStatus("capturing");
       if (onSnapshot) {
         onSnapshot(snapshot);
       }
     } catch (error) {
       console.error("Failed to capture map snapshot", error);
       setErrorMessage(error.message);
-      stopStreaming({ preserveStatus: true });
+      stopSnapshotTimer({ preserveStatus: true });
       setStatus("error");
     }
-  }, [apiKey, onSnapshot, stopStreaming]);
+  }, [apiKey, onSnapshot, stopSnapshotTimer]);
 
-  const startStreaming = useCallback(() => {
+  const startSnapshotTimer = useCallback(() => {
     if (!mapRef.current || !apiKey) return;
     if (intervalRef.current) return;
 
@@ -137,8 +139,8 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
     intervalRef.current = setInterval(() => {
       captureSnapshot();
     }, CAPTURE_INTERVAL_MS);
-    setIsStreaming(true);
-    setStatus("streaming");
+    setIsSnapshotTimerActive(true);
+    setStatus("capturing");
   }, [apiKey, captureSnapshot]);
 
   useEffect(() => {
@@ -199,20 +201,26 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
 
     return () => {
       isCancelled = true;
-      stopStreaming();
+      stopSnapshotTimer();
     };
-  }, [apiKey, stopStreaming]);
+  }, [apiKey, stopSnapshotTimer]);
 
   useEffect(() => {
     if (!isSessionActive) {
-      stopStreaming();
+      stopSnapshotTimer();
       return;
     }
 
     if (mapLoaded && apiKey) {
-      startStreaming();
+      startSnapshotTimer();
     }
-  }, [apiKey, isSessionActive, mapLoaded, startStreaming, stopStreaming]);
+  }, [
+    apiKey,
+    isSessionActive,
+    mapLoaded,
+    startSnapshotTimer,
+    stopSnapshotTimer,
+  ]);
 
   useEffect(() => {
     if (!lastSnapshot) return;
@@ -287,19 +295,14 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
     [apiKey, isSearching, searchTerm],
   );
 
-  const handleManualSnapshot = useCallback(() => {
-    if (!mapRef.current || !apiKey) return;
-    captureSnapshot();
-  }, [apiKey, captureSnapshot]);
-
-  const toggleStreaming = useCallback(() => {
+  const toggleSnapshotTimer = useCallback(() => {
     if (!mapRef.current) return;
-    if (isStreaming) {
-      stopStreaming();
+    if (isSnapshotTimerActive) {
+      stopSnapshotTimer();
     } else {
-      startStreaming();
+      startSnapshotTimer();
     }
-  }, [isStreaming, startStreaming, stopStreaming]);
+  }, [isSnapshotTimerActive, startSnapshotTimer, stopSnapshotTimer]);
 
   if (!apiKey) {
     return (
@@ -324,7 +327,7 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
         <h2 className="text-lg font-semibold">Map context stream</h2>
         <span
           className={`text-xs uppercase tracking-widest ${
-            status === "streaming"
+            status === "capturing"
               ? "text-green-600"
               : status === "error"
                 ? "text-red-600"
@@ -337,9 +340,9 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
       <p className="text-xs text-gray-500 leading-snug">
         While a realtime session is connected, the current map view is captured
         every 15 seconds and shared with the assistant as visual context. You
-        can pause or trigger a fresh snapshot at any time.
+        can pause the snapshot timer at any time.
       </p>
-      <form className="flex gap-2" onSubmit={handleSearch}>
+      <form className="flex flex-wrap gap-2" onSubmit={handleSearch}>
         <input
           type="text"
           placeholder="Search for a city or place"
@@ -356,13 +359,8 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
         >
           {isSearching ? "searching..." : "search"}
         </Button>
-      </form>
-      <div
-        ref={mapContainerRef}
-        className="flex-1 min-h-[260px] rounded-xl overflow-hidden border border-gray-200 shadow-inner bg-gray-100"
-      />
-      <div className="flex flex-wrap gap-2">
         <Button
+          type="button"
           className="bg-gray-700 px-4 py-2"
           onClick={handleUseCurrentLocation}
           icon={<Crosshair size={16} />}
@@ -370,44 +368,29 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
         >
           current location
         </Button>
-        <Button
-          className="bg-gray-700 px-4 py-2"
-          onClick={handleManualSnapshot}
-          icon={<RefreshCw size={16} />}
-          disabled={!mapLoaded}
-        >
-          snapshot now
-        </Button>
+      </form>
+      <div className="flex flex-wrap gap-2">
         <Button
           className={`px-4 py-2 ${
-            isStreaming ? "bg-yellow-600" : "bg-green-600"
+            isSnapshotTimerActive ? "bg-yellow-600" : "bg-green-600"
           }`}
-          onClick={toggleStreaming}
+          onClick={toggleSnapshotTimer}
           icon={
-            isStreaming ? <PauseCircle size={16} /> : <PlayCircle size={16} />
+            isSnapshotTimerActive ? (
+              <PauseCircle size={16} />
+            ) : (
+              <PlayCircle size={16} />
+            )
           }
           disabled={!mapLoaded}
         >
-          {isStreaming ? "pause stream" : "resume stream"}
+          {isSnapshotTimerActive ? "pause snapshots" : "resume snapshots"}
         </Button>
       </div>
-      {lastSnapshot ? (
-        <figure className="flex flex-col gap-1">
-          <figcaption className="text-xs text-gray-500 uppercase tracking-widest">
-            last snapshot · {formatLatLng(lastSnapshot.center)} · zoom {" "}
-            {lastSnapshot.zoom}
-          </figcaption>
-          <img
-            src={lastSnapshot.dataUrl}
-            alt="Latest captured map view"
-            className="w-full h-auto rounded-lg border border-gray-200"
-          />
-        </figure>
-      ) : (
-        <p className="text-sm text-gray-500">
-          Snapshot preview will appear here once streaming begins.
-        </p>
-      )}
+      <div
+        ref={mapContainerRef}
+        className="flex-1 min-h-[360px] rounded-xl overflow-hidden border border-gray-200 shadow-inner bg-gray-100"
+      />
       {errorMessage ? (
         <p className="text-sm text-red-600">{errorMessage}</p>
       ) : null}
