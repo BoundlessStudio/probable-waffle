@@ -1,58 +1,131 @@
-export default function ToolPanel({ snapshots, isSessionActive }) {
-  const hasSnapshots = snapshots && snapshots.length > 0;
+import { useEffect, useState } from "react";
 
-  const statusMessage = hasSnapshots
-    ? "Latest captured views"
-    : isSessionActive
-      ? "Snapshots will appear as the map streams."
-      : "Start a session to begin capturing snapshots.";
+const functionDescription = `
+Call this function when a user asks for a color palette.
+`;
+
+const sessionUpdate = {
+  type: "session.update",
+  session: {
+    type: "realtime",
+    tools: [
+      {
+        type: "function",
+        name: "display_color_palette",
+        description: functionDescription,
+        parameters: {
+          type: "object",
+          strict: true,
+          properties: {
+            theme: {
+              type: "string",
+              description: "Description of the theme for the color scheme.",
+            },
+            colors: {
+              type: "array",
+              description: "Array of five hex color codes based on the theme.",
+              items: {
+                type: "string",
+                description: "Hex color code",
+              },
+            },
+          },
+          required: ["theme", "colors"],
+        },
+      },
+    ],
+    tool_choice: "auto",
+  },
+};
+
+function FunctionCallOutput({ functionCallOutput }) {
+  const { theme, colors } = JSON.parse(functionCallOutput.arguments);
+
+  const colorBoxes = colors.map((color) => (
+    <div
+      key={color}
+      className="w-full h-16 rounded-md flex items-center justify-center border border-gray-200"
+      style={{ backgroundColor: color }}
+    >
+      <p className="text-sm font-bold text-black bg-slate-100 rounded-md p-2 border border-black">
+        {color}
+      </p>
+    </div>
+  ));
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p>Theme: {theme}</p>
+      {colorBoxes}
+      <pre className="text-xs bg-gray-100 rounded-md p-2 overflow-x-auto">
+        {JSON.stringify(functionCallOutput, null, 2)}
+      </pre>
+    </div>
+  );
+}
+
+export default function ToolPanel({
+  isSessionActive,
+  sendClientEvent,
+  events,
+}) {
+  const [functionAdded, setFunctionAdded] = useState(false);
+  const [functionCallOutput, setFunctionCallOutput] = useState(null);
+
+  useEffect(() => {
+    if (!events || events.length === 0) return;
+
+    const firstEvent = events[events.length - 1];
+    if (!functionAdded && firstEvent.type === "session.created") {
+      sendClientEvent(sessionUpdate);
+      setFunctionAdded(true);
+    }
+
+    const mostRecentEvent = events[0];
+    if (
+      mostRecentEvent.type === "response.done" &&
+      mostRecentEvent.response.output
+    ) {
+      mostRecentEvent.response.output.forEach((output) => {
+        if (
+          output.type === "function_call" &&
+          output.name === "display_color_palette"
+        ) {
+          setFunctionCallOutput(output);
+          setTimeout(() => {
+            sendClientEvent({
+              type: "response.create",
+              response: {
+                instructions: `
+                ask for feedback about the color palette - don't repeat 
+                the colors, just ask if they like the colors.
+              `,
+              },
+            });
+          }, 500);
+        }
+      });
+    }
+  }, [events]);
+
+  useEffect(() => {
+    if (!isSessionActive) {
+      setFunctionAdded(false);
+      setFunctionCallOutput(null);
+    }
+  }, [isSessionActive]);
 
   return (
     <section className="h-full w-full flex flex-col gap-4">
-      <div className="h-full bg-gray-50 rounded-md p-4 flex flex-col">
-        <header className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-bold">Map snapshots</h2>
-          {hasSnapshots ? (
-            <span className="text-xs uppercase tracking-widest text-gray-500">
-              {snapshots.length} saved
-            </span>
-          ) : null}
-        </header>
-        <p className="text-sm text-gray-500 mt-1">{statusMessage}</p>
-        {hasSnapshots ? (
-          <div className="mt-4 flex-1 overflow-y-auto pr-1">
-            <ul className="grid grid-cols-2 gap-3">
-              {snapshots.map((snapshot) => {
-                const { capturedAt, dataUrl, relativeTime, center, zoom } =
-                  snapshot;
-                const locationLabel = `${center.lat.toFixed(
-                  2,
-                )}, ${center.lng.toFixed(2)}`;
-
-                return (
-                  <li key={capturedAt}>
-                    <figure className="flex flex-col gap-1">
-                      <img
-                        src={dataUrl}
-                        alt={`Map snapshot at ${locationLabel}`}
-                        className="w-full h-32 object-cover rounded-md border border-gray-200 shadow-sm bg-white"
-                      />
-                      <figcaption className="text-xs text-gray-500 leading-tight">
-                        {relativeTime} | zoom {zoom}
-                        <br />
-                        {locationLabel}
-                      </figcaption>
-                    </figure>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ) : (
-          <div className="mt-4 flex-1 border border-dashed border-gray-300 rounded-lg flex items-center justify-center text-sm text-gray-400">
-            <span>No thumbnails yet.</span>
-          </div>
-        )}
+      <div className="h-full bg-gray-50 rounded-md p-4">
+        <h2 className="text-lg font-bold">Color Palette Tool</h2>
+        {isSessionActive
+          ? (
+            functionCallOutput
+              ? <FunctionCallOutput functionCallOutput={functionCallOutput} />
+              : <p>Ask for advice on a color palette...</p>
+          )
+          : <p>Start the session to use this tool...</p>}
       </div>
     </section>
   );

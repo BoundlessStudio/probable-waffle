@@ -1,18 +1,7 @@
-export default function Button({
-  icon,
-  children,
-  onClick,
-  className = "",
-  type = "button",
-  disabled = false,
-}) {
+export default function Button({ icon, children, onClick, className }) {
   return (
     <button
-      type={type}
-      disabled={disabled}
-      className={`bg-gray-800 text-white rounded-full p-4 flex items-center gap-1 ${
-        disabled ? "opacity-60 cursor-not-allowed" : "hover:opacity-90"
-      } ${className}`}
+      className={`bg-gray-800 text-white rounded-full p-4 flex items-center gap-1 hover:opacity-90 ${className}`}
       onClick={onClick}
     >
       {icon}
