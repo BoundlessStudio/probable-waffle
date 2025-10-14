@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader } from "@googlemaps/js-api-loader";
+import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { Crosshair, PauseCircle, PlayCircle, RefreshCw } from "react-feather";
 import Button from "./Button";
 
@@ -47,6 +47,7 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
   const mapRef = useRef(null);
   const intervalRef = useRef(null);
   const viewRef = useRef({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM });
+  const loaderInitializedRef = useRef(false);
 
   const [status, setStatus] = useState("idle");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -149,10 +150,14 @@ export default function MapPanel({ isSessionActive, onSnapshot }) {
     async function loadMap() {
       try {
         setStatus("loading");
-        const loader = new Loader({ apiKey, version: "weekly", libraries: [] });
-        const googleMaps = await loader.load();
+        if (!loaderInitializedRef.current) {
+          setOptions({ key: apiKey, v: "weekly" });
+          loaderInitializedRef.current = true;
+        }
+
+        const { Map: GoogleMap } = await importLibrary("maps");
         if (isCancelled) return;
-        mapRef.current = new googleMaps.Map(mapContainerRef.current, {
+        mapRef.current = new GoogleMap(mapContainerRef.current, {
           center: DEFAULT_CENTER,
           zoom: DEFAULT_ZOOM,
           disableDefaultUI: true,
