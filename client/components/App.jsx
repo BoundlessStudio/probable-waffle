@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import logo from "/assets/openai-logomark.svg";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
 import ToolPanel from "./ToolPanel";
+import MapPanel from "./MapPanel";
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -120,6 +121,46 @@ export default function App() {
     sendClientEvent({ type: "response.create" });
   }
 
+  const handleMapSnapshot = useCallback(
+    (snapshot) => {
+      if (!isSessionActive) return;
+      if (!dataChannel || dataChannel.readyState !== "open") return;
+
+      const { center, zoom, capturedAt, imageBase64, mediaType } = snapshot;
+      const timestamp = new Date(capturedAt);
+      const formattedTime = timestamp.toLocaleTimeString();
+      const summary = `Latest map snapshot captured at ${formattedTime} (center ${center.lat.toFixed(4)}, ${center.lng.toFixed(4)} | zoom ${zoom}).`;
+
+      const event = {
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          metadata: {
+            source: "map_snapshot",
+            captured_at: timestamp.toISOString(),
+            center,
+            zoom,
+          },
+          content: [
+            {
+              type: "input_text",
+              text: summary,
+            },
+            {
+              type: "input_image",
+              image_base64: imageBase64,
+              media_type: mediaType,
+            },
+          ],
+        },
+      };
+
+      sendClientEvent(event);
+    },
+    [dataChannel, isSessionActive],
+  );
+
   // Attach event listeners to the data channel when a new one is created
   useEffect(() => {
     if (dataChannel) {
@@ -150,19 +191,27 @@ export default function App() {
         </div>
       </nav>
       <main className="absolute top-16 left-0 right-0 bottom-0">
-        <section className="absolute top-0 left-0 right-[380px] bottom-0 flex">
-          <section className="absolute top-0 left-0 right-0 bottom-32 px-4 overflow-y-auto">
-            <EventLog events={events} />
-          </section>
-          <section className="absolute h-32 left-0 right-0 bottom-0 p-4">
-            <SessionControls
-              startSession={startSession}
-              stopSession={stopSession}
-              sendClientEvent={sendClientEvent}
-              sendTextMessage={sendTextMessage}
-              events={events}
+        <section className="absolute top-0 left-0 right-[380px] bottom-0 flex flex-col gap-4 p-4 pr-0">
+          <div className="h-[360px] min-h-[320px]">
+            <MapPanel
               isSessionActive={isSessionActive}
+              onSnapshot={handleMapSnapshot}
             />
+          </div>
+          <section className="flex-1 flex flex-col min-h-0 gap-4">
+            <div className="flex-1 overflow-y-auto pr-4">
+              <EventLog events={events} />
+            </div>
+            <div className="h-32">
+              <SessionControls
+                startSession={startSession}
+                stopSession={stopSession}
+                sendClientEvent={sendClientEvent}
+                sendTextMessage={sendTextMessage}
+                events={events}
+                isSessionActive={isSessionActive}
+              />
+            </div>
           </section>
         </section>
         <section className="absolute top-0 w-[380px] right-0 bottom-0 p-4 pt-0 overflow-y-auto">
