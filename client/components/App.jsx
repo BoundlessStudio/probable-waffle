@@ -16,51 +16,71 @@ export default function App() {
   const audioElement = useRef(null);
 
   async function startSession() {
-    // Get a session token for OpenAI Realtime API
-    const tokenResponse = await fetch("/token");
-    const data = await tokenResponse.json();
-    const EPHEMERAL_KEY = data.value;
+    try {
+      const tokenResponse = await fetch("/token");
+      if (!tokenResponse.ok) {
+        throw new Error(
+          `Token request failed with status ${tokenResponse.status}`,
+        );
+      }
 
-    // Create a peer connection
-    const pc = new RTCPeerConnection();
+      const tokenData = await tokenResponse.json();
+      const EPHEMERAL_KEY =
+        tokenData?.client_secret?.value ??
+        tokenData?.client_secret ??
+        tokenData?.value;
+      if (!EPHEMERAL_KEY) {
+        console.error("Unexpected /token payload", tokenData);
+        throw new Error("Missing ephemeral key in /token response");
+      }
 
-    // Set up to play remote audio from the model
-    audioElement.current = document.createElement("audio");
-    audioElement.current.autoplay = true;
-    pc.ontrack = (event) => {
-      audioElement.current.srcObject = event.streams[0];
-    };
+      const pc = new RTCPeerConnection();
 
-    // Add local audio track for microphone input in the browser
-    const mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-    });
-    pc.addTrack(mediaStream.getTracks()[0]);
+      audioElement.current = document.createElement("audio");
+      audioElement.current.autoplay = true;
+      pc.ontrack = (event) => {
+        audioElement.current.srcObject = event.streams[0];
+      };
 
-    // Set up data channel for sending and receiving events
-    const dataChannelInstance = pc.createDataChannel("oai-events");
-    setDataChannel(dataChannelInstance);
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      mediaStream.getTracks().forEach((track) => pc.addTrack(track, mediaStream));
 
-    // Start the session using the Session Description Protocol (SDP)
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+      const dataChannelInstance = pc.createDataChannel("oai-events");
+      setDataChannel(dataChannelInstance);
 
-    const baseUrl = "https://api.openai.com/v1/realtime/calls";
-    const model = "gpt-realtime";
-    const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
-      method: "POST",
-      body: offer.sdp,
-      headers: {
-        Authorization: `Bearer ${EPHEMERAL_KEY}`,
-        "Content-Type": "application/sdp",
-      },
-    });
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
-    const sdp = await sdpResponse.text();
-    const answer = { type: "answer", sdp };
-    await pc.setRemoteDescription(answer);
+      const baseUrl = "https://api.openai.com/v1/realtime/calls";
+      const model = "gpt-realtime";
+      const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer ${EPHEMERAL_KEY}`,
+          "Content-Type": "application/sdp",
+          "OpenAI-Beta": "realtime=v1",
+        },
+      });
 
-    peerConnection.current = pc;
+      if (!sdpResponse.ok) {
+        const errorBody = await sdpResponse.text();
+        console.error("Realtime handshake failed:", errorBody || sdpResponse.status);
+        throw new Error(
+          `Realtime API responded with status ${sdpResponse.status}`,
+        );
+      }
+
+      const sdp = await sdpResponse.text();
+      await pc.setRemoteDescription({ type: "answer", sdp });
+
+      peerConnection.current = pc;
+    } catch (error) {
+      console.error("Failed to start realtime session", error);
+      stopSession();
+    }
   }
 
   function stopSession() {
@@ -251,4 +271,3 @@ export default function App() {
     </>
   );
 }
-
