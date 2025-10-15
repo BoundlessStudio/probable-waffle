@@ -1,7 +1,10 @@
 {
   "type": "module",
   "scripts": {
-    "dev": "nodemon server.js --dev"
+    "dev": "nodemon server.js --dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server.js"
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^1.16.6",
