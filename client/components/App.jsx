@@ -146,7 +146,7 @@ export default function App() {
       return;
     }
 
-    const { center, zoom, imageBase64, mediaType, capturedAt } = snapshot;
+    const { center, zoom, dataUrl, capturedAt } = snapshot;
     const timestamp = new Date(capturedAt).toLocaleTimeString();
     const centerLabel = `${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}`;
 
@@ -162,8 +162,7 @@ export default function App() {
           },
           {
             type: "input_image",
-            image_base64: imageBase64,
-            mime_type: mediaType,
+            image_url: dataUrl,
           },
         ],
       },
