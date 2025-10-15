@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import logo from "/assets/openai-logomark.svg";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
-import ToolPanel from "./ToolPanel";
+import MapPanel from "./MapPanel";
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -141,6 +141,35 @@ export default function App() {
     }
   }, [dataChannel]);
 
+  function handleMapSnapshot(snapshot) {
+    if (!snapshot || !isSessionActive) {
+      return;
+    }
+
+    const { center, zoom, imageBase64, mediaType, capturedAt } = snapshot;
+    const timestamp = new Date(capturedAt).toLocaleTimeString();
+    const centerLabel = `${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}`;
+
+    sendClientEvent({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: `Map snapshot captured at ${timestamp} focused on ${centerLabel} (zoom ${zoom}).`,
+          },
+          {
+            type: "input_image",
+            image_base64: imageBase64,
+            mime_type: mediaType,
+          },
+        ],
+      },
+    });
+  }
+
   return (
     <>
       <nav className="absolute top-0 left-0 right-0 h-16 flex items-center">
@@ -152,7 +181,10 @@ export default function App() {
       <main className="absolute top-16 left-0 right-0 bottom-0">
         <section className="absolute top-0 left-0 right-[380px] bottom-0 flex">
           <section className="absolute top-0 left-0 right-0 bottom-32 px-4 overflow-y-auto">
-            <EventLog events={events} />
+            <MapPanel
+              isSessionActive={isSessionActive}
+              onSnapshot={handleMapSnapshot}
+            />
           </section>
           <section className="absolute h-32 left-0 right-0 bottom-0 p-4">
             <SessionControls
@@ -166,12 +198,7 @@ export default function App() {
           </section>
         </section>
         <section className="absolute top-0 w-[380px] right-0 bottom-0 p-4 pt-0 overflow-y-auto">
-          <ToolPanel
-            sendClientEvent={sendClientEvent}
-            sendTextMessage={sendTextMessage}
-            events={events}
-            isSessionActive={isSessionActive}
-          />
+          <EventLog events={events} />
         </section>
       </main>
     </>
